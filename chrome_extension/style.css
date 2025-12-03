@@ -229,6 +229,26 @@ input:checked + .slider:before {
 #account-list-container.open {
     max-height: 400px !important;
     opacity: 1 !important;
+    overflow-y: auto;
+}
+
+#account-list {
+    max-height: 360px;
+    overflow-y: auto;
+}
+
+#account-list::-webkit-scrollbar,
+#account-list-container::-webkit-scrollbar {
+    width: 8px;
+}
+#account-list::-webkit-scrollbar-track,
+#account-list-container::-webkit-scrollbar-track {
+    background: #2B2D31;
+}
+#account-list::-webkit-scrollbar-thumb,
+#account-list-container::-webkit-scrollbar-thumb {
+    background-color: #404249;
+    border-radius: 4px;
 }
 
 #bulk-import-container {
