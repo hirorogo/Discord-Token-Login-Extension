@@ -45,7 +45,7 @@
     
     <div class="test-section">
         <h2>1. Extension Installation Check</h2>
-        <button onclick="checkExtension()">Check Extension</button>
+        <button id="btn-check-extension">Check Extension</button>
         <div id="extension-result" class="result"></div>
     </div>
     
@@ -68,43 +68,71 @@ test_token_2/test_token_3
 test_token_4,test_token_5
 test_token_6 test_token_7</textarea>
         <br>
-        <button onclick="testTokenParser()">Test Parser</button>
+        <button id="btn-test-parser">Test Parser</button>
         <div id="parser-result" class="result"></div>
     </div>
     
     <div class="test-section">
         <h2>4. Storage Test</h2>
-        <button onclick="addTestAccount()">Add Test Account</button>
-        <button onclick="viewStorage()">View Storage</button>
-        <button onclick="clearStorage()">Clear Storage</button>
+        <button id="btn-add-account">Add Test Account</button>
+        <button id="btn-view-storage">View Storage</button>
+        <button id="btn-clear-storage">Clear Storage</button>
         <div id="storage-result" class="result"></div>
     </div>
     
     <script>
-        function checkExtension() {
-            const result = document.getElementById('extension-result');
-            if (typeof chrome !== 'undefined' && chrome.storage) {
-                result.textContent = '✓ Extension API available';
-                result.style.color = '#3ba55c';
-            } else {
-                result.textContent = '✗ Extension API not available';
-                result.style.color = '#f23f42';
+        // 安全な storage ポリフィル
+        const storage = (() => {
+            const hasChromeStorage = typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
+            if (hasChromeStorage) {
+                return {
+                    get(keys, cb) {
+                        try { chrome.storage.local.get(keys, cb); } catch (e) { console.error('chrome.storage.local.get error', e); cb({}); }
+                    },
+                    set(obj, cb) {
+                        try { chrome.storage.local.set(obj, cb); } catch (e) { console.error('chrome.storage.local.set error', e); cb && cb(); }
+                    },
+                    clear(cb) {
+                        try { chrome.storage.local.clear(cb); } catch (e) { console.error('chrome.storage.local.clear error', e); cb && cb(); }
+                    },
+                    available: true
+                };
             }
-        }
-        
-        function testTokenParser() {
-            const input = document.getElementById('test-tokens').value;
-            const result = document.getElementById('parser-result');
-            
+            // localStorage 版
+            return {
+                get(keys, cb) {
+                    const out = {};
+                    try {
+                        const list = Array.isArray(keys) ? keys : (typeof keys === 'object' ? Object.keys(keys) : [keys]);
+                        for (const k of list) {
+                            const raw = localStorage.getItem(k);
+                            out[k] = raw ? JSON.parse(raw) : (typeof keys === 'object' ? keys[k] : undefined);
+                        }
+                    } catch (e) { console.error('localStorage get error', e); }
+                    cb(out);
+                },
+                set(obj, cb) {
+                    try {
+                        for (const [k, v] of Object.entries(obj)) {
+                            localStorage.setItem(k, JSON.stringify(v));
+                        }
+                    } catch (e) { console.error('localStorage set error', e); }
+                    cb && cb();
+                },
+                clear(cb) {
+                    try { localStorage.clear(); } catch (e) { console.error('localStorage clear error', e); }
+                    cb && cb();
+                },
+                available: false
+            };
+        })();
+
+        function parseTokensText(inputText) {
             const tokens = [];
-            const lines = input.split(/\r?\n/);
-            
+            const lines = (inputText || '').split(/\r?\n/);
             for (const line of lines) {
                 const trimmedLine = line.trim();
-                if (!trimmedLine || trimmedLine.startsWith('#') || trimmedLine.startsWith('//')) {
-                    continue;
-                }
-                
+                if (!trimmedLine || /^\s*(#|\/\/)/.test(trimmedLine)) continue;
                 let lineTokens = [];
                 if (trimmedLine.includes(',')) {
                     lineTokens = trimmedLine.split(',');
@@ -115,53 +143,87 @@ test_token_6 test_token_7</textarea>
                 } else {
                     lineTokens = [trimmedLine];
                 }
-                
                 for (const token of lineTokens) {
                     const cleanToken = token.trim().replace(/^["']|["']$/g, '');
-                    if (cleanToken) {
-                        tokens.push(cleanToken);
-                    }
+                    if (cleanToken) tokens.push(cleanToken);
                 }
             }
-            
-            result.textContent = `Parsed ${tokens.length} tokens:\n${JSON.stringify([...new Set(tokens)], null, 2)}`;
+            return [...new Set(tokens)];
         }
-        
-        function addTestAccount() {
-            const result = document.getElementById('storage-result');
-            chrome.storage.local.get(['accounts'], (res) => {
-                const accounts = res.accounts || [];
-                accounts.push({
-                    id: 'test_' + Date.now(),
-                    username: 'TestUser',
-                    global_name: 'Test User',
-                    avatar: 'https://cdn.discordapp.com/embed/avatars/0.png',
-                    token: 'test_token_' + Date.now(),
-                    memo: 'Test memo',
-                    savedAt: Date.now()
-                });
-                chrome.storage.local.set({ accounts: accounts }, () => {
-                    result.textContent = `✓ Test account added. Total: ${accounts.length}`;
-                    result.style.color = '#3ba55c';
-                });
-            });
-        }
-        
-        function viewStorage() {
-            const result = document.getElementById('storage-result');
-            chrome.storage.local.get(['accounts'], (res) => {
-                result.textContent = JSON.stringify(res.accounts || [], null, 2);
-            });
-        }
-        
-        function clearStorage() {
-            const result = document.getElementById('storage-result');
-            if (confirm('Clear all storage?')) {
-                chrome.storage.local.clear(() => {
-                    result.textContent = '✓ Storage cleared';
-                    result.style.color = '#3ba55c';
+
+        function init() {
+            const btnCheck = document.getElementById('btn-check-extension');
+            const extensionResult = document.getElementById('extension-result');
+            const btnParser = document.getElementById('btn-test-parser');
+            const parserInput = document.getElementById('test-tokens');
+            const parserResult = document.getElementById('parser-result');
+            const btnAdd = document.getElementById('btn-add-account');
+            const btnView = document.getElementById('btn-view-storage');
+            const btnClear = document.getElementById('btn-clear-storage');
+            const storageResult = document.getElementById('storage-result');
+
+            if (btnCheck && extensionResult) {
+                btnCheck.addEventListener('click', () => {
+                    const available = storage.available;
+                    extensionResult.textContent = available ? 'Extension API available' : 'Extension API not available (fallback to localStorage)';
+                    extensionResult.style.color = available ? '#3ba55c' : '#f23f42';
                 });
             }
+
+            if (btnParser && parserInput && parserResult) {
+                btnParser.addEventListener('click', () => {
+                    const tokens = parseTokensText(parserInput.value);
+                    parserResult.textContent = `Parsed ${tokens.length} tokens:\n${JSON.stringify(tokens, null, 2)}`;
+                });
+            }
+
+            if (btnAdd && storageResult) {
+                btnAdd.addEventListener('click', () => {
+                    storage.get(['accounts'], (res) => {
+                        const accounts = res.accounts || [];
+                        accounts.push({
+                            id: 'test_' + Date.now(),
+                            username: 'TestUser',
+                            global_name: 'Test User',
+                            avatar: 'https://cdn.discordapp.com/embed/avatars/0.png',
+                            token: 'test_token_' + Date.now(),
+                            memo: 'Test memo',
+                            savedAt: Date.now()
+                        });
+                        storage.set({ accounts }, () => {
+                            storageResult.textContent = `Test account added. Total: ${accounts.length}`;
+                            storageResult.style.color = '#3ba55c';
+                        });
+                    });
+                });
+            }
+
+            if (btnView && storageResult) {
+                btnView.addEventListener('click', () => {
+                    storage.get(['accounts'], (res) => {
+                        storageResult.textContent = JSON.stringify(res.accounts || [], null, 2);
+                        storageResult.style.color = 'inherit';
+                    });
+                });
+            }
+
+            if (btnClear && storageResult) {
+                btnClear.addEventListener('click', () => {
+                    if (confirm('Clear all storage?')) {
+                        storage.clear(() => {
+                            storageResult.textContent = 'Storage cleared';
+                            storageResult.style.color = '#3ba55c';
+                        });
+                    }
+                });
+            }
+        }
+
+        // DOMContentLoaded 後に初期化
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
         }
     </script>
 </body>
