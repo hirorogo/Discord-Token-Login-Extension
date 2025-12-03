@@ -6,14 +6,26 @@ if (document.querySelector('.discord-token-login-popup')) {
             window.open('https://discord.ozeu.net', '_blank');
         });
     }
-    
-    const tokenInput = document.querySelector('#token');
+      const tokenInput = document.querySelector('#token');
     const submitBtn = document.querySelector('#submit');
     const saveToggle = document.querySelector('#save-toggle');
     const savedAccountsTrigger = document.querySelector('#saved-accounts-trigger');
     const accountListContainer = document.querySelector('#account-list-container');
     const accountList = document.querySelector('#account-list');
     const errorMessage = document.querySelector('#error-message');
+    
+    // 大量インポート関連の要素
+    const bulkImportTrigger = document.querySelector('#bulk-import-trigger');
+    const bulkImportContainer = document.querySelector('#bulk-import-container');
+    const tokenFileInput = document.querySelector('#token-file-input');
+    const uploadFileBtn = document.querySelector('#upload-file-btn');
+    const bulkTokenInput = document.querySelector('#bulk-token-input');
+    const processTokensBtn = document.querySelector('#process-tokens-btn');
+    const bulkProgress = document.querySelector('#bulk-progress');
+    const progressCount = document.querySelector('#progress-count');
+    const progressTotal = document.querySelector('#progress-total');
+    const progressFill = document.querySelector('#progress-fill');
+    const bulkResult = document.querySelector('#bulk-result');
 
     chrome.storage.local.get(['isSaveEnabled'], (result) => {
         saveToggle.checked = result.isSaveEnabled || false;
@@ -21,19 +33,90 @@ if (document.querySelector('.discord-token-login-popup')) {
 
     saveToggle.addEventListener('change', () => {
         chrome.storage.local.set({ isSaveEnabled: saveToggle.checked });
-    });
-
-    savedAccountsTrigger.addEventListener('click', () => {
+    });    savedAccountsTrigger.addEventListener('click', () => {
         const isOpen = accountListContainer.classList.contains('open');
         
         if (!isOpen) {
             renderSavedAccounts();
             accountListContainer.classList.add('open');
             savedAccountsTrigger.textContent = 'Hide Saved Accounts ▲';
+            // 大量インポートが開いていたら閉じる
+            if (bulkImportContainer.classList.contains('open')) {
+                bulkImportContainer.classList.remove('open');
+                bulkImportTrigger.textContent = 'Bulk Import Tokens ▼';
+            }
         } else {
             accountListContainer.classList.remove('open');
             savedAccountsTrigger.textContent = 'Show Saved Accounts ▼';
         }
+    });
+
+    // 大量インポート機能のイベントリスナー
+    bulkImportTrigger.addEventListener('click', () => {
+        const isOpen = bulkImportContainer.classList.contains('open');
+        
+        if (!isOpen) {
+            bulkImportContainer.classList.add('open');
+            bulkImportTrigger.textContent = 'Hide Bulk Import ▲';
+            // アカウント一覧が開いていたら閉じる
+            if (accountListContainer.classList.contains('open')) {
+                accountListContainer.classList.remove('open');
+                savedAccountsTrigger.textContent = 'Show Saved Accounts ▼';
+            }
+        } else {
+            bulkImportContainer.classList.remove('open');
+            bulkImportTrigger.textContent = 'Bulk Import Tokens ▼';
+        }
+    });
+
+    // 大量インポートトリガーイベント
+    document.getElementById('bulk-import-trigger').addEventListener('click', function() {
+        console.log('Bulk import trigger clicked'); // デバッグ用
+        
+        const container = document.getElementById('bulk-import-container');
+        const trigger = document.getElementById('bulk-import-trigger');
+        
+        console.log('Container:', container); // デバッグ用
+        console.log('Current classes:', container.className); // デバッグ用
+        
+        if (container.classList.contains('open')) {
+            container.classList.remove('open');
+            trigger.textContent = 'Bulk Import Tokens ▼';
+        } else {
+            container.classList.add('open');
+            trigger.textContent = 'Bulk Import Tokens ▲';
+        }
+    });
+
+    uploadFileBtn.addEventListener('click', () => {
+        tokenFileInput.click();
+    });
+
+    tokenFileInput.addEventListener('change', (event) => {
+        const file = event.target.files[0];
+        if (file && file.type === 'text/plain') {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                bulkTokenInput.value = e.target.result;
+            };
+            reader.readAsText(file);
+        }
+    });
+
+    processTokensBtn.addEventListener('click', async () => {
+        const text = bulkTokenInput.value.trim();
+        if (!text) {
+            showBulkResult('エラー: トークンが入力されていません', 'error');
+            return;
+        }
+
+        const tokens = parseTokens(text);
+        if (tokens.length === 0) {
+            showBulkResult('エラー: 有効なトークンが見つかりませんでした', 'error');
+            return;
+        }
+
+        await processBulkTokens(tokens);
     });
 
     tokenInput.addEventListener('input', () => {
@@ -222,5 +305,131 @@ if (document.querySelector('.discord-token-login-popup')) {
                 renderSavedAccounts();
             });
         });
+    }
+
+    // 大量トークン処理用の関数群
+    function parseTokens(text) {
+        const tokens = [];
+        const lines = text.split(/\r?\n/);
+        
+        for (const line of lines) {
+            const trimmedLine = line.trim();
+            if (!trimmedLine || trimmedLine.startsWith('#') || trimmedLine.startsWith('//')) {
+                continue; // 空行やコメント行をスキップ
+            }
+            
+            // 各種フォーマットに対応
+            let lineTokens = [];
+            
+            // カンマ区切り: token,token
+            if (trimmedLine.includes(',')) {
+                lineTokens = trimmedLine.split(',');
+            }
+            // スラッシュ区切り: token/token
+            else if (trimmedLine.includes('/')) {
+                lineTokens = trimmedLine.split('/');
+            }
+            // スペース区切り: token token
+            else if (trimmedLine.includes(' ')) {
+                lineTokens = trimmedLine.split(/\s+/);
+            }
+            // 単一トークン
+            else {
+                lineTokens = [trimmedLine];
+            }
+            
+            // トークンを整形して追加
+            for (const token of lineTokens) {
+                const cleanToken = token.trim().replace(/^["']|["']$/g, '');
+                if (cleanToken && isValidTokenFormat(cleanToken)) {
+                    tokens.push(cleanToken);
+                }
+            }
+        }
+        
+        // 重複を除去
+        return [...new Set(tokens)];
+    }
+
+    function isValidTokenFormat(token) {
+        // Discordトークンの基本的な形式チェック
+        // 実際のトークンは複雑な形式を持つが、基本的な長さと文字種をチェック
+        return token.length > 50 && /^[A-Za-z0-9\-_\.]+$/.test(token);
+    }
+
+    async function processBulkTokens(tokens) {
+        showBulkProgress(true);
+        updateProgress(0, tokens.length);
+        
+        let successCount = 0;
+        let failCount = 0;
+        const failedTokens = [];
+        
+        for (let i = 0; i < tokens.length; i++) {
+            const token = tokens[i];
+            updateProgress(i + 1, tokens.length);
+            
+            try {
+                const success = await fetchAndSaveUser(token);
+                if (success) {
+                    successCount++;
+                } else {
+                    failCount++;
+                    failedTokens.push(token.substring(0, 20) + '...');
+                }
+            } catch (error) {
+                failCount++;
+                failedTokens.push(token.substring(0, 20) + '...');
+            }
+            
+            // APIレート制限を考慮して少し待機
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        
+        showBulkProgress(false);
+        showBulkResult(
+            `処理完了: 成功 ${successCount}件, 失敗 ${failCount}件${failCount > 0 ? '\n失敗したトークン: ' + failedTokens.slice(0, 3).join(', ') + (failedTokens.length > 3 ? '...' : '') : ''}`,
+            successCount > 0 ? 'success' : 'warning'
+        );
+        
+        // 保存したアカウント一覧を更新
+        if (accountListContainer.classList.contains('open')) {
+            renderSavedAccounts();
+        }
+    }
+
+    function showBulkProgress(show) {
+        if (show) {
+            bulkProgress.classList.remove('hidden');
+            bulkResult.classList.add('hidden');
+        } else {
+            bulkProgress.classList.add('hidden');
+        }
+    }
+
+    function updateProgress(current, total) {
+        progressCount.textContent = current;
+        progressTotal.textContent = total;
+        const percentage = (current / total) * 100;
+        progressFill.style.width = percentage + '%';
+    }
+
+    function showBulkResult(message, type = 'info') {
+        bulkResult.classList.remove('hidden');
+        const resultText = bulkResult.querySelector('.result-text');
+        resultText.textContent = message;
+        
+        // 結果タイプに応じてスタイルを変更
+        bulkResult.className = 'bulk-result ' + type;
+        
+        if (type === 'error') {
+            bulkResult.style.borderLeftColor = '#f23f42';
+        } else if (type === 'success') {
+            bulkResult.style.borderLeftColor = '#3ba55c';
+        } else if (type === 'warning') {
+            bulkResult.style.borderLeftColor = '#faa61a';
+        } else {
+            bulkResult.style.borderLeftColor = '#5865f2';
+        }
     }
 }
