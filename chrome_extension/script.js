@@ -58,6 +58,7 @@ if (document.querySelector('.discord-token-login-popup')) {
     const progressFill = document.querySelector('#progress-fill');
     const bulkResult = document.querySelector('#bulk-result');
     const clearTokensBtn = document.querySelector('#clear-tokens-btn');
+    const pasteClipboardBtn = document.querySelector('#paste-clipboard-btn');
 
     const memoModal = document.querySelector('#memo-modal');
     const modalAccountName = document.querySelector('#modal-account-name');
@@ -146,6 +147,21 @@ if (document.querySelector('.discord-token-login-popup')) {
         });
     }
 
+    if (pasteClipboardBtn && bulkTokenInput) {
+        pasteClipboardBtn.addEventListener('click', async () => {
+            try {
+                if (navigator.clipboard && navigator.clipboard.readText) {
+                    const text = await navigator.clipboard.readText();
+                    bulkTokenInput.value = text || '';
+                } else {
+                    showBulkResultMessage('クリップボードAPIが利用できません');
+                }
+            } catch (e) {
+                showBulkResultMessage('クリップボードからの取得に失敗しました');
+            }
+        });
+    }
+
     if (processTokensBtn && bulkTokenInput) {
         processTokensBtn.addEventListener('click', async () => {
             const text = bulkTokenInput.value.trim();
@@ -199,10 +215,42 @@ if (document.querySelector('.discord-token-login-popup')) {
 
     function login(token, accountId = null) {
         if (accountId) {
+            resolveImportedProfileOnFirstLogin(accountId, token);
             recordLoginAttempt(accountId, token);
         }
-
         window.open("https://discord.com/channels/@me?discordtoken=" + token, '_blank');
+    }
+
+    async function resolveImportedProfileOnFirstLogin(accountId, token) {
+        try {
+            const current = await new Promise((resolve) => {
+                storage.get(['accounts'], (res) => {
+                    const acc = (res.accounts || []).find(a => a.id === accountId);
+                    resolve(acc);
+                });
+            });
+            if (!current || !current.imported) return;
+
+            const response = await fetch('https://discord.com/api/v9/users/@me', {
+                headers: { 'Authorization': token }
+            });
+            if (!response.ok) return;
+            const data = await response.json();
+            const avatarUrl = getAvatarUrl(data.id, data.avatar, data.discriminator);
+
+            await updateAccountStatus(accountId, {
+                id: data.id,
+                username: data.username,
+                global_name: data.global_name,
+                avatar: avatarUrl,
+                imported: false
+            });
+            if (accountListContainer.classList.contains('open')) {
+                renderSavedAccounts();
+            }
+        } catch (e) {
+            console.warn('resolveImportedProfileOnFirstLogin error', e);
+        }
     }
 
     async function recordLoginAttempt(accountId, token) {
@@ -445,14 +493,19 @@ if (document.querySelector('.discord-token-login-popup')) {
 
     async function processBulkTokens(tokens) {
         let successCount = 0;
-
+        let duplicateCount = 0;
         processTokensBtn.disabled = true;
         processTokensBtn.textContent = 'Processing...';
-
         try {
+            const existing = await new Promise((resolve) => {
+                storage.get(['accounts'], (res) => {
+                    const accounts = res.accounts || [];
+                    resolve(new Set(accounts.map(a => a.token)));
+                });
+            });
             for (let i = 0; i < tokens.length; i++) {
                 const token = tokens[i];
-
+                if (existing.has(token)) { duplicateCount++; continue; }
                 const userInfo = {
                     id: generateRandomId(),
                     username: `ImportedToken${i + 1}`,
@@ -462,17 +515,18 @@ if (document.querySelector('.discord-token-login-popup')) {
                     savedAt: Date.now(),
                     imported: true
                 };
-
                 await saveToStorage(userInfo);
+                existing.add(token);
                 successCount++;
             }
-
-            showBulkResultMessage(`${successCount}件のトークンを保存しました`);
-
+            const msg = duplicateCount > 0
+                ? `${successCount}件保存、${duplicateCount}件は重複のためスキップしました`
+                : `${successCount}件のトークンを保存しました`;
+            showBulkResultMessage(msg);
+            if (bulkTokenInput) bulkTokenInput.value = '';
             if (accountListContainer.classList.contains('open')) {
                 renderSavedAccounts();
             }
-
         } catch (error) {
             showBulkResultMessage(`エラーが発生しました: ${error.message}`);
         } finally {
@@ -589,23 +643,37 @@ if (document.querySelector('.discord-token-login-popup')) {
         }
     });
 
-    // Clear All ボタンのイベントリスナー
+    // Clear All ボタン（二度押しで確認、ポップアップ不使用）
     const clearAllBtn = document.querySelector('#clear-all-btn');
+    let clearAllConfirmTimer = null;
     if (clearAllBtn) {
         clearAllBtn.addEventListener('click', () => {
-            // 確認ダイアログを表示
-            const confirmClear = confirm('Are you sure you want to clear all saved data? This action cannot be undone.');
-            if (!confirmClear) return;
-
-            // ローカルストレージをクリア
-            chrome.storage.local.clear(() => {
-                console.log('All saved data has been cleared.');
-                alert('All saved data has been cleared.');
-
-                // UIをリセット
-                if (accountList) accountList.innerHTML = '';
-                if (bulkTokenInput) bulkTokenInput.value = '';
-            });
+            const confirming = clearAllBtn.dataset.confirm === 'true';
+            if (!confirming) {
+                clearAllBtn.dataset.confirm = 'true';
+                const originalText = clearAllBtn.textContent;
+                clearAllBtn.textContent = 'Click again to clear all';
+                clearAllBtn.style.backgroundColor = '#d21f2b';
+                clearAllConfirmTimer = setTimeout(() => {
+                    clearAllBtn.dataset.confirm = 'false';
+                    clearAllBtn.textContent = originalText;
+                    clearAllBtn.style.backgroundColor = '#f23f42';
+                }, 3000);
+            } else {
+                if (clearAllConfirmTimer) { clearTimeout(clearAllConfirmTimer); }
+                clearAllBtn.dataset.confirm = 'false';
+                storage.clear(() => {
+                    if (tokenInput) tokenInput.value = '';
+                    if (bulkTokenInput) bulkTokenInput.value = '';
+                    if (accountList) accountList.innerHTML = '';
+                    hideError();
+                    // トリガー表示のリセット
+                    if (accountListContainer) accountListContainer.classList.remove('open');
+                    if (bulkImportContainer) bulkImportContainer.classList.remove('open');
+                });
+                clearAllBtn.textContent = 'Cleared';
+                setTimeout(() => { clearAllBtn.textContent = 'Clear All'; }, 1500);
+            }
         });
     }
 }

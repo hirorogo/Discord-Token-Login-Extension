@@ -37,6 +37,7 @@
                 <div id="bulk-import-trigger" class="unselectable">Bulk Import Tokens ▼</div>
                 
                 <p id="promise">This extension will never collect your Token</p>
+                <button id="clear-all-btn" class="bulk-btn" style="background-color:#f23f42; margin-top:6px;">Clear All</button>
             </div>
         </div>
         
@@ -50,6 +51,7 @@
             <div class="bulk-import-content">
                 <input type="file" id="token-file-input" accept=".txt" style="display: none;">
                 <button id="upload-file-btn" class="bulk-btn">Upload Text File</button>
+                <button id="paste-clipboard-btn" class="bulk-btn" style="background-color:#4f545c;">Paste from Clipboard</button>
                 
                 <div class="bulk-separator">or</div>
                 
@@ -58,7 +60,6 @@
                 <div class="bulk-actions">
                     <button id="process-tokens-btn" class="bulk-btn">Process Tokens</button>
                     <button id="clear-tokens-btn" class="bulk-btn" style="background-color:#4f545c;">Clear</button>
-                    <button id="clear-all-btn" class="bulk-btn" style="background-color:#f23f42;">Clear All</button>
                 </div>
                 
                 <div class="bulk-formats">
