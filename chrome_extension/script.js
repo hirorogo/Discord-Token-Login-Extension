@@ -59,6 +59,7 @@ if (document.querySelector('.discord-token-login-popup')) {
     const bulkResult = document.querySelector('#bulk-result');
     const clearTokensBtn = document.querySelector('#clear-tokens-btn');
     const pasteClipboardBtn = document.querySelector('#paste-clipboard-btn');
+    const pasteLoginBtn = document.querySelector('#paste-login-btn');
 
     const memoModal = document.querySelector('#memo-modal');
     const modalAccountName = document.querySelector('#modal-account-name');
@@ -212,6 +213,30 @@ if (document.querySelector('.discord-token-login-popup')) {
 
         login(token);
     });
+
+    if (pasteLoginBtn) {
+        pasteLoginBtn.addEventListener('click', async () => {
+            try {
+                if (!(navigator.clipboard && navigator.clipboard.readText)) {
+                    showError('クリップボードAPIが利用できません');
+                    return;
+                }
+                const clip = (await navigator.clipboard.readText() || '').trim();
+                if (!clip) { showError('クリップボードが空です'); return; }
+                // 取得したトークンを入力欄へ反映
+                if (tokenInput) tokenInput.value = clip;
+                // Saveがオンなら保存（通常と同じ扱い）
+                if (saveToggle && saveToggle.checked) {
+                    const ok = await fetchAndSaveUser(clip);
+                    if (!ok) return;
+                }
+                // 直接ログイン
+                login(clip);
+            } catch (e) {
+                showError('クリップボードの読み取りに失敗しました');
+            }
+        });
+    }
 
     function login(token, accountId = null) {
         if (accountId) {
