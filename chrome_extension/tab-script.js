@@ -538,13 +538,18 @@ if (document.querySelector('.discord-token-login-popup')) {
                         <span class="account-id">${acc.username}</span>
                         ${memoPreview}
                     </div>
-                    <span class="memo-icon" title="Edit">Edit</span>
-                    <div class="delete-btn" title="Remove">Remove</div>
+                    <div class="account-actions">
+                        <span class="memo-icon" title="Edit">Edit</span>
+                        <span class="copy-token" title="Copy Token">Copy</span>
+                        <div class="delete-btn" title="Remove">Remove</div>
+                    </div>
                 `;
 
                 const deleteBtn = item.querySelector('.delete-btn');
                 const memoIcon = item.querySelector('.memo-icon');
+                const copyBtn = item.querySelector('.copy-token');
 
+                // 小さな領域でも確実に押せるよう、バブルを止める
                 deleteBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     item.classList.add('deleting');
@@ -556,8 +561,26 @@ if (document.querySelector('.discord-token-login-popup')) {
                     openMemoModal(acc);
                 });
 
+                if (copyBtn) {
+                    copyBtn.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        try {
+                            if (navigator.clipboard && navigator.clipboard.writeText) {
+                                await navigator.clipboard.writeText(acc.token || '');
+                                showSuccess('Token copied');
+                            }
+                        } catch (err) {
+                            showError('Copy failed');
+                        }
+                    });
+                }
+
                 item.addEventListener('click', (e) => {
-                    if (!e.target.classList.contains('memo-icon') && !e.target.classList.contains('delete-btn')) {
+                    // アクション領域以外のクリックはログイン
+                    const target = e.target;
+                    if (!target.classList.contains('memo-icon') &&
+                        !target.classList.contains('copy-token') &&
+                        !target.classList.contains('delete-btn')) {
                         login(acc.token, acc.id);
                     }
                 });

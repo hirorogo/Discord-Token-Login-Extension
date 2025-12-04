@@ -910,3 +910,18 @@ input:checked + .slider:before {
         padding: 20px;
     }
 }
+
+.account-actions { display: flex; gap: 6px; align-items: center; }
+.copy-token {
+    color: #b5bac1;
+    font-size: 11px;
+    padding: 4px 8px;
+    border: 1px solid #404249;
+    border-radius: 4px;
+    cursor: pointer;
+    user-select: none;
+}
+.copy-token:hover { background: #404249; color: #dbdee1; }
+
+/* メモアイコンのクリック可能領域を少し広げる */
+.memo-icon { display: inline-block; }
